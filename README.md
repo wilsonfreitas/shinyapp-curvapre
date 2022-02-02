@@ -7,6 +7,7 @@ O dashboard traz:
 -   Curva a vista de juros prefixados
 -   Curva a termo de juros prefixados
 -   Curva a termos com interpolação nas datas do COPOM (nas 4 próximas)
+-   As datas das reuniões do COPOM
 
 Link para o dashboard: <https://wilsonfreitas.shinyapps.io/curvapre/>.
 
