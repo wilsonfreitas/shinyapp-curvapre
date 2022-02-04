@@ -58,15 +58,16 @@ server <- function(input, output) {
     copomDates <- reactive({
         curve <- curvePre()
         rng <- range(curve$maturity_date)
+        copom_dates <- add.bizdays(copom_dates, 1, "Brazil/ANBIMA")
         ix <- copom_dates >= rng[1] & copom_dates <= rng[2]
-        add.bizdays(copom_dates[ix][1:4], 1, "Brazil/ANBIMA")
+        copom_dates[ix][1:4]
     })
     
     curveCopom <- reactive({
         curve <- curvePre()
         .copom_dates <- copomDates()
         parts <- split_curve_into_copom_dates(curve, .copom_dates)
-        copom_curve <- copom_calc(parts, 1, conflicts = "forward")
+        copom_calc(parts, 1, conflicts = "forward")
     })
 
     output$curvePre <- renderPlot({

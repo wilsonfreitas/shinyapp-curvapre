@@ -91,16 +91,29 @@ calc_first_term <- function(parts, x, results) {
   fact_cdi <- (1 + futs$adjusted_tax[1]/100) ^ (du_copom/252)
   du_rem <- du_fut[2] - du_copom
   
-  fwd <- (fact_fut / fact_cdi) ^ (252/du_rem) - 1
-  copom_curve_term(
-    refdate = refdate,
-    du_copom = du_copom,
-    copom_date = copom_date,
-    zero = futs$adjusted_tax[1],
-    fact_zero = (1 + futs$adjusted_tax[1]/100) ^ (du_copom/252),
-    copom_forward = 100 * fwd,
-    move = 1e4 * (fwd - futs$adjusted_tax[1]/100)
-  )
+  if (du_rem > 0) {
+    fwd <- (fact_fut / fact_cdi) ^ (252/du_rem) - 1
+    copom_curve_term(
+      refdate = refdate,
+      du_copom = du_copom,
+      copom_date = copom_date,
+      zero = futs$adjusted_tax[1],
+      fact_zero = (1 + futs$adjusted_tax[1]/100) ^ (du_copom/252),
+      copom_forward = 100 * fwd,
+      move = 1e4 * (fwd - futs$adjusted_tax[1]/100)
+    )
+  } else {
+    fwd <- 10.65/100
+    copom_curve_term(
+      refdate = refdate,
+      du_copom = du_copom,
+      copom_date = copom_date,
+      zero = futs$adjusted_tax[1],
+      fact_zero = (1 + futs$adjusted_tax[1]/100) ^ (du_copom/252),
+      copom_forward = 100 * fwd,
+      move = 1e4 * (fwd - futs$adjusted_tax[1]/100)
+    )
+  }
 }
 
 calc_with_forward <- function(parts, x, results) {
@@ -226,8 +239,23 @@ cdi_rate_from_web <- function(refdate = NULL) {
     .json <- content(res, as = "text") |> 
       jsonlite::fromJSON()
     
+    refdate <- as.Date(.json$dataTaxa, "%d/%m/%Y")
+    
+    # if (refdate == as.Date("2022-02-02")) {
+    #   data.frame(
+    #     refdate = refdate,
+    #     CDI = 10.65
+    #   )  
+    # } else {
+    #   data.frame(
+    #     refdate = refdate,
+    #     CDI = .json$taxa |> 
+    #       str_replace(",", ".") |> 
+    #       as.numeric()
+    #   )  
+    # }
     data.frame(
-      refdate = as.Date(.json$dataTaxa, "%d/%m/%Y"),
+      refdate = refdate,
       CDI = .json$taxa |> 
         str_replace(",", ".") |> 
         as.numeric()
@@ -243,7 +271,6 @@ cdi_rate_from_web <- function(refdate = NULL) {
   }
 }
 
-
 forward_curve <- function(curve) {
   curve |>
     mutate(
@@ -255,105 +282,104 @@ forward_curve <- function(curve) {
     select(-DUB, -FatorTaxa, -FatorTaxa_b)
 }
 
-plot_curve <- function(curve, copom_dates) {
+plot_curve <- function(curve, copom_dates, base_size = 20) {
   
+  .dash <- "#4f7f81"
+  .colors <- c("#e05305", "#fbb407")
   .names <- c("Curva Zero", "Curva Forward")
+  names(.colors) <- .names
+  
   g <- ggplot() +
+    geom_vline(xintercept = copom_dates, colour = .dash,
+               linetype = "dashed", size = 1) +
     geom_line(
       data = curve,
       mapping = aes(x = maturity_date, y = adjusted_tax, colour = .names[1]),
-      size = 1, alpha = 0.5
+      size = 1
     ) +
     geom_point(
       data = curve,
       mapping = aes(x = maturity_date, y = adjusted_tax, colour = .names[1]),
-      size = 3, alpha = 0.5
+      size = 2
     ) +
     geom_step(
       data = curve,
       mapping = aes(x = maturity_date, y = forward_tax, colour = .names[2]),
-      size = 1, alpha = 0.5,
+      size = 1,
       direction = "vh"
     ) +
     geom_point(
       data = curve,
       mapping = aes(x = maturity_date, y = forward_tax, colour = .names[2]),
-      size = 3, alpha = 0.5
-    ) +
-    theme_bw() +
-    labs(x = xlab, y = "%",
-         title = "Curva de Juros Prefixados DI1")
+      size = 2
+    )
   
-  .colors <- c("darkgreen", "darkblue")
-  names(.colors) <- .names
   g <- g +
-    scale_colour_manual("", breaks = .names,
-                        values = .colors)
-  g <- g +
-    geom_vline(xintercept = copom_dates, colour = "grey",
-               linetype = "dashed", size = 1)
+    scale_colour_manual("", breaks = .names, values = .colors)
   
-  .title <- sprintf("Curva de Juros Prefixados DI1 - %s",
-                    format(curve$refdate[1]))
+  .title <- glue("Curva de Juros Prefixados DI1 - {refdate}",
+                 refdate = format(curve$refdate[1]))
   g <- g +
-    theme_bw() +
-    labs(x = "Data", y = "%", title = .title,
+    labs(x = "Data",
+         y = "%",
+         title = .title,
          subtitle = "As linhas cinza tracejadas representam as datas do COPOM",
-         caption = "Fonte: B3") +
-    theme(legend.position = "top")
+         caption = "Desenvolvido por wilsonfreitas (com dados da B3)") +
+    theme_wf(base_size = 16)
   g
 }
+
+plot_copom_curve <- function(curve, copom_curve, copom_dates, base_size = 16) {
+  .dash <- "#4f7f81"
+  .colors <- c("#e05305", "#fbb407")
+  .names <- c("COPOM Forward", "DI1 Forward")
+  names(.colors) <- .names
   
-plot_copom_curve <- function(curve, copom_curve, copom_dates) {
-  xlab <- "Vencimento"
   curve <- curve |>
     filter(maturity_date <= add.bizdays(refdate, 252, "Brazil/ANBIMA"))
   
-  .names <- c("COPOM Forward", "DI1 Forward")
   g <- ggplot() +
+    geom_vline(
+      xintercept = copom_dates,
+      colour = "grey",
+      linetype = "dashed", size = 1
+    ) +
     geom_step(
       data = curve,
       mapping = aes(x = maturity_date, y = forward_tax, colour = .names[2]),
-      size = 1, alpha = 0.5,
+      size = 1,
       direction = "vh"
     ) +
     geom_point(
       data = curve,
       mapping = aes(x = maturity_date, y = forward_tax, colour = .names[2]),
-      size = 3, alpha = 0.5
+      size = 2
     ) +
     geom_step(
       data = copom_curve,
       mapping = aes(x = maturity_date, y = forward_tax, colour = .names[1]),
-      size = 1, alpha = 0.5,
+      size = 1,
       direction = "hv"
     ) +
     geom_point(
       data = copom_curve,
       mapping = aes(x = maturity_date, y = forward_tax, colour = .names[1]),
-      size = 3, alpha = 0.5
+      size = 2
     )
   
   g <- g +
-    geom_vline(xintercept = copom_dates,
-               colour = "grey",
-               linetype = "dashed", size = 1)
-
-  .colors <- c("darkblue", "darkgreen")
-  names(.colors) <- .names
-  g <- g +
-    scale_colour_manual("", breaks = .names,
-                        values = .colors)
+    scale_colour_manual("", breaks = .names, values = .colors)
   
-  .title <- sprintf("Curva a Termo de Juros Prefixados DI1 - %s",
-                    format(curve$refdate[1]))
+  .title <- glue("Curva a Termo de Juros Prefixados DI1 - {refdate}",
+                 refdate = format(curve$refdate[1]))
   g <- g +
-    theme_bw() +
-    labs(x = xlab, y = "%",
+    labs(x = "Data",
+         y = "%",
          title = .title,
          subtitle = "As linhas cinza tracejadas representam as datas do COPOM",
-         caption = "Fonte: B3") +
-    theme(legend.position = "top")
+         caption = "Desenvolvido por wilsonfreitas (com dados da B3)") +
+    theme_wf(base_size = base_size)
+
   g
 }
 
@@ -425,10 +451,11 @@ get_curve_from_web <- function(refdate = NULL) {
   di1 <- contracts |>
     filter(Mercadoria == "DI1") |>
     mutate(
-      maturity_date = contract_to_maturity(Vencimento)
+      maturity_date = contract_to_maturity(Vencimento) |>
+        following("Brazil/ANBIMA")
     ) |>
     mutate(
-      business_days = bizdays(DataRef, following(maturity_date, "Brazil/ANBIMA"), "Brazil/ANBIMA"),
+      business_days = bizdays(DataRef, maturity_date, "Brazil/ANBIMA"),
       adjusted_tax = 100 * ((100000 / PUAtual)^(252/business_days) - 1)
     ) |>
     rename(refdate = DataRef) |> 
@@ -453,3 +480,32 @@ get_curve_from_web <- function(refdate = NULL) {
     )
 }
 
+# Paleta de cores
+# https://icolorpalette.com/e05305_4f7f81_fbb407_5d91a2_432608
+theme_wf <- function(base_size = 12,
+                     base_family = "mono",
+                     base_line_size = base_size/22,
+                     base_rect_size = base_size/22) {
+  theme_grey(base_size = base_size,
+             base_family = base_family, 
+             base_line_size = base_line_size,
+             base_rect_size = base_rect_size) %+replace%
+    theme(
+      legend.position = "top",
+      text = element_text(family = base_family, size = base_size),
+      plot.background = element_blank(),
+      panel.background = element_blank(),
+      strip.background = element_blank(),
+      panel.grid = element_line(colour = "grey92"),
+      panel.grid.minor = element_blank(),
+      panel.border = element_blank(),
+      title = element_text(family = base_family,
+                           colour = "black",
+                           face = "bold"),
+      axis.line = element_line(colour = "grey92", size = 1),
+      axis.title.y = element_text(colour = "black", face = "bold"),
+      axis.title.x = element_text(colour = "black", face = "bold"),
+      legend.key = element_rect(fill = "white", colour = NA),
+      complete = TRUE
+    )
+}
