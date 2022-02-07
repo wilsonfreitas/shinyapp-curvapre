@@ -1,8 +1,9 @@
 
 library(shiny)
+library(formattable)
 library(lubridate)
-library(plotly)
 library(bslib)
+library(readr)
 
 source("copom-functions.R")
 
@@ -21,7 +22,7 @@ ui <- fluidPage(
 
     fluidRow(
         column(
-            plotOutput("curvePre"),
+            plotOutput("curvePre", height = "320px"),
             width = 12
         )
     ),
@@ -30,8 +31,15 @@ ui <- fluidPage(
     
     fluidRow(
         column(
-            plotOutput("curveCopom"),
-            width = 12
+            plotOutput("curveCopom", height = "320px"),
+            width = 8
+        ),
+        column(
+            width = 4,
+            dataTableOutput("tableCopom"),
+            downloadButton("downloadCopom",
+                           "Download .csv com os dados",
+                           icon = icon("download")),
         )
     )
 )
@@ -61,6 +69,14 @@ server <- function(input, output) {
         parts <- split_curve_into_copom_dates(curve, .copom_dates)
         copom_calc(parts, 1, conflicts = "forward")
     })
+    
+    curveCopomFormatted <- reactive({
+        curveCopom() |>
+            select(maturity_date, forward_tax, move) |>
+            rename(Data = maturity_date,
+                   `Taxa a termo` = forward_tax,
+                   `Var.` = move)
+    })
 
     output$curvePre <- renderPlot({
         curve <- curvePre()
@@ -74,6 +90,31 @@ server <- function(input, output) {
         .copom_dates <- copomDates()
         plot_copom_curve(curve, copom_curve, .copom_dates)
     })
+    
+    output$tableCopom <- renderDataTable({
+        curveCopomFormatted() |>
+            mutate(
+                `Taxa a termo` = accounting(`Taxa a termo`, digits = 2),
+                `Var.` = accounting(`Var.`, digits = 0)
+            ) |>
+            formattable() |>
+            as.datatable(
+                options = list(
+                    pageLength = 10,
+                    searchable = FALSE,
+                    dom = "t"
+                ))
+    })
+    
+    output$downloadCopom <- downloadHandler(
+        filename = function() {
+            refdate() |> as.Date() |> format("VariacaoCOPOM_%Y%m%d.csv")
+        },
+        content = function(file) {
+            df <- curveCopomFormatted()
+            write_csv(df, file)
+        }
+    )
 }
 
 shinyApp(ui = ui, server = server)
