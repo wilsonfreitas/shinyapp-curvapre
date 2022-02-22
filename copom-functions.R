@@ -341,7 +341,7 @@ plot_copom_curve <- function(curve, copom_curve, copom_dates, base_size = 16) {
   g <- ggplot() +
     geom_vline(
       xintercept = copom_dates,
-      colour = "grey",
+      colour = .dash,
       linetype = "dashed", size = 1
     ) +
     geom_step(
@@ -396,7 +396,7 @@ flatten_names <- function(nx) {
 }
 
 get_contracts <- function(refdate) {
-  url <- "http://www2.bmf.com.br/pages/portal/bmfbovespa/lumis/lum-ajustes-do-pregao-ptBR.asp"
+  url <- "https://www2.bmf.com.br/pages/portal/bmfbovespa/lumis/lum-ajustes-do-pregao-ptBR.asp"
   
   if (is.null(refdate)) {
     res <- GET(url)
@@ -463,7 +463,7 @@ get_curve_from_web <- function(refdate = NULL) {
     select(maturity_date, refdate, adjusted_tax, business_days) |> 
     arrange(maturity_date)
   
-  rates <- cdi_rate_from_web()
+  rates <- cdi_rate_from_web(refdate)
   v1 <- data.frame(
     maturity_date = add.bizdays(refdate, 1, "Brazil/ANBIMA"),
     refdate = refdate,
