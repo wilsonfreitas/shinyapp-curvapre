@@ -4,8 +4,12 @@ library(formattable)
 library(lubridate)
 library(bslib)
 library(readr)
+library(DT)
 
 source("copom-functions.R")
+
+CURVE <- get_curve_from_web()
+REFDATE <- CURVE$refdate[1]
 
 .theme <- bs_theme(
     fg = "#fff",
@@ -22,8 +26,19 @@ ui <- fluidPage(
 
     fluidRow(
         column(
+            width = 3,
+            dateInput("refdate", "Data de referência", REFDATE),
+            downloadButton("downloadCurvaPre",
+                           "Download .csv com os dados da curva Prefixada",
+                           icon = icon("download")),
+            div(span("1", style="color: black;")),
+            downloadButton("downloadCopom",
+                           "Download .csv com os dados das curvas a Termo",
+                           icon = icon("download"))
+        ),
+        column(
             plotOutput("curvePre", height = "320px"),
-            width = 12
+            width = 9
         )
     ),
     
@@ -37,17 +52,15 @@ ui <- fluidPage(
         column(
             width = 4,
             dataTableOutput("tableCopom"),
-            downloadButton("downloadCopom",
-                           "Download .csv com os dados",
-                           icon = icon("download")),
         )
     )
 )
 
-server <- function(input, output) {
+
+server <- function(input, output, session) {
     
     curvePre <- reactive({
-        get_curve_from_web()
+        get_curve_from_web(input$refdate)
     })
     
     refdate <- reactive({
@@ -112,6 +125,16 @@ server <- function(input, output) {
         },
         content = function(file) {
             df <- curveCopomFormatted()
+            write_csv(df, file)
+        }
+    )
+
+    output$downloadCurvaPre <- downloadHandler(
+        filename = function() {
+            refdate() |> as.Date() |> format("CurvaPrefixadaDI1_%Y%m%d.csv")
+        },
+        content = function(file) {
+            df <- curvePre()
             write_csv(df, file)
         }
     )
