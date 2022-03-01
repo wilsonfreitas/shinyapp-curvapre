@@ -459,7 +459,7 @@ get_curve_from_web <- function(refdate = NULL) {
       adjusted_tax = 100 * ((100000 / PUAtual)^(252/business_days) - 1)
     ) |>
     rename(refdate = DataRef) |> 
-    filter(business_days != 0) |>
+    filter(business_days != 0, business_days != 1) |>
     select(maturity_date, refdate, adjusted_tax, business_days) |> 
     arrange(maturity_date)
   
