@@ -86,7 +86,7 @@ server <- function(input, output, session) {
     curveCopomFormatted <- reactive({
         curveCopom() |>
             select(maturity_date, forward_tax, move) |>
-            rename(Data = maturity_date,
+            rename(`Data do COPOM` = maturity_date,
                    `Taxa a termo` = forward_tax,
                    `Var.` = move)
     })
