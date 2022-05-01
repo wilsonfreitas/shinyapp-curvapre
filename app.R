@@ -5,11 +5,11 @@ library(lubridate)
 library(bslib)
 library(readr)
 library(DT)
+library(flatforwardCOPOM)
 
-source("copom-functions.R")
+source("utils-functions.R")
 
 CURVE <- get_curve_from_web()
-REFDATE <- CURVE$refdate[1]
 
 .theme <- bs_theme(
     fg = "#fff",
@@ -19,31 +19,28 @@ REFDATE <- CURVE$refdate[1]
 ui <- fluidPage(
 
     titlePanel("Curva de Juros Prefixados DI1"),
-    
     theme = .theme,
-    
     br(),
-
     fluidRow(
         column(
             width = 3,
-            dateInput("refdate", "Data de referência", REFDATE),
+            dateInput("refdate", "Data de referência", CURVE@refdate),
             downloadButton("downloadCurvaPre",
-                           "Download .csv com os dados da curva Prefixada",
-                           icon = icon("download")),
-            div(span("1", style="color: black;")),
+                "Download .csv com os dados da curva Prefixada",
+                icon = icon("download")
+            ),
+            div(span("1", style = "color: black;")),
             downloadButton("downloadCopom",
-                           "Download .csv com os dados das curvas a Termo",
-                           icon = icon("download"))
+                "Download .csv com os dados das curvas a Termo",
+                icon = icon("download")
+            )
         ),
         column(
             plotOutput("curvePre", height = "320px"),
             width = 9
         )
     ),
-    
     br(),
-    
     fluidRow(
         column(
             plotOutput("curveCopom", height = "320px"),
@@ -58,52 +55,53 @@ ui <- fluidPage(
 
 
 server <- function(input, output, session) {
-    
     curvePre <- reactive({
         get_curve_from_web(input$refdate)
     })
-    
+
     refdate <- reactive({
         curve <- curvePre()
-        curve$refdate[1]
+        curve@refdate
     })
-    
+
     copomDates <- reactive({
-        curve <- curvePre()
-        rng <- range(curve$maturity_date)
-        copom_dates <- add.bizdays(copom_dates, 1, "Brazil/ANBIMA")
-        ix <- copom_dates >= rng[1] & copom_dates <= rng[2]
-        copom_dates[ix][1:4]
+        get_copom_dates(refdate(), 4)
     })
-    
+
     curveCopom <- reactive({
         curve <- curvePre()
         .copom_dates <- copomDates()
-        parts <- split_curve_into_copom_dates(curve, .copom_dates)
-        copom_calc(parts, 1, conflicts = "forward")
+        interpolation(curve) <- interp_flatforwardcopom(.copom_dates, "second")
+        curve
     })
-    
+
     curveCopomFormatted <- reactive({
-        curveCopom() |>
-            select(maturity_date, forward_tax, move) |>
-            rename(`Data do COPOM` = maturity_date,
-                   `Taxa a termo` = forward_tax,
-                   `Var.` = move)
+        curve <- curveCopom()
+        moves <- interpolation(curve)@moves
+        moves |>
+            mutate(
+                moves = moves * 1e4,
+                forward_rates = 100 * as.numeric(forward_rates)
+            ) |>
+            rename(
+                `Data do COPOM` = dates,
+                `Taxa a termo` = forward_rates,
+                `Var.` = moves
+            )
     })
 
     output$curvePre <- renderPlot({
         curve <- curvePre()
         .copom_dates <- copomDates()
-        plot_curve(curve |> filter(business_days < 504), .copom_dates)
+        plot_curve(fixedincome::first(curve, "2 years"), .copom_dates)
     })
-    
+
     output$curveCopom <- renderPlot({
-        curve <- curvePre()
-        copom_curve <- curveCopom()
+        curve <- curveCopom()
         .copom_dates <- copomDates()
-        plot_copom_curve(curve, copom_curve, .copom_dates)
+        plot_copom_curve(fixedincome::first(curve, "1 years"), .copom_dates)
     })
-    
+
     output$tableCopom <- renderDataTable({
         curveCopomFormatted() |>
             mutate(
@@ -116,12 +114,15 @@ server <- function(input, output, session) {
                     pageLength = 10,
                     searchable = FALSE,
                     dom = "t"
-                ))
+                )
+            )
     })
-    
+
     output$downloadCopom <- downloadHandler(
         filename = function() {
-            refdate() |> as.Date() |> format("VariacaoCOPOM_%Y%m%d.csv")
+            refdate() |>
+                as.Date() |>
+                format("VariacaoCOPOM_%Y%m%d.csv")
         },
         content = function(file) {
             df <- curveCopomFormatted()
@@ -131,10 +132,17 @@ server <- function(input, output, session) {
 
     output$downloadCurvaPre <- downloadHandler(
         filename = function() {
-            refdate() |> as.Date() |> format("CurvaPrefixadaDI1_%Y%m%d.csv")
+            refdate() |>
+                as.Date() |>
+                format("CurvaPrefixadaDI1_%Y%m%d.csv")
         },
         content = function(file) {
-            df <- curvePre()
+            df <- curvePre() |>
+                as.data.frame() |>
+                mutate(
+                    terms = as.numeric(terms),
+                    rates = as.numeric(rates)
+                )
             write_csv(df, file)
         }
     )

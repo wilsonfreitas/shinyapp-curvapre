@@ -4,64 +4,87 @@
 # após a próxima reunião.
 
 
-source("copom-functions.R")
+source("utils-functions.R")
+library(flatforwardCOPOM)
 
 curve <- get_curve_from_web()
-refdate <- curve$refdate[1]
-rng <- range(curve$maturity_date)
-copom_dates <- add.bizdays(copom_dates, 1, "Brazil/ANBIMA")
-ix <- copom_dates >= rng[1] & copom_dates <= rng[2]
-.copom_dates <- copom_dates[ix][1:4]
-parts <- split_curve_into_copom_dates(curve, .copom_dates)
-copom_curve <- copom_calc(parts, 1, conflicts = "forward")
+refdate <- curve@refdate
+.copom_dates <- get_copom_dates(refdate, 4)
+interpolation(curve) <- interp_flatforwardcopom(.copom_dates, "second")
+
+curve[[seq_len(252)]] |> forwardrate()
+
+interpolation(curve)@moves
+
+interpolation_error(curve)
 
 # ----
 
-plot_curve <- function(curve, copom_dates) {
-  
-  .dash <- "#4f7f81"
-  .colors <- c("#e05305", "#fbb407")
-  .names <- c("Curva Zero", "Curva Forward")
-  names(.colors) <- .names
-  
-  g <- ggplot() +
-    geom_vline(xintercept = copom_dates, colour = .dash,
-               linetype = "dashed", size = 1) +
-    geom_line(
-      data = curve,
-      mapping = aes(x = maturity_date, y = adjusted_tax, colour = .names[1]),
-      size = 1
-    ) +
-    geom_point(
-      data = curve,
-      mapping = aes(x = maturity_date, y = adjusted_tax, colour = .names[1]),
-      size = 2
-    ) +
-    geom_step(
-      data = curve,
-      mapping = aes(x = maturity_date, y = forward_tax, colour = .names[2]),
-      size = 1,
-      direction = "vh"
-    ) +
-    geom_point(
-      data = curve,
-      mapping = aes(x = maturity_date, y = forward_tax, colour = .names[2]),
-      size = 2
-    )
+plot_curve(fixedincome::first(curve, "2 years"), .copom_dates)
+plot_copom_curve(fixedincome::first(curve, "2 years"), .copom_dates)
 
-  g <- g +
-    scale_colour_manual("", breaks = .names, values = .colors)
+copom_dates <- .copom_dates
+curve <- fixedincome::first(curve, "1 years")
+curve_spt <- as.data.frame(curve)
+curve_fwd <- forwardrate(curve)
+curve_fwd <- spotratecurve(
+  as.numeric(curve_fwd),
+  cumsum(curve_fwd@terms),
+  refdate = curve@refdate,
+  .copyfrom = curve
+) |> as.data.frame()
+copom_curve_fwd <- curve[[seq_len(max(curve@terms))]] |>
+  forwardrate()
+copom_curve <- spotratecurve(
+  as.numeric(copom_curve_fwd),
+  cumsum(copom_curve_fwd@terms),
+  refdate = curve@refdate,
+  .copyfrom = curve
+) |> as.data.frame()
 
-  .title <- glue("Curva de Juros Prefixados DI1 - {refdate}",
-                 refdate = format(curve$refdate[1]))
-  g <- g +
-    labs(x = "Data",
-         y = "%",
-         title = .title,
-         subtitle = "As linhas cinza tracejadas representam as datas do COPOM",
-         caption = "Desenvolvido por wilsonfreitas (com dados da B3)") +
-    theme_wf()
-  g
-}
+.dash <- "#4f7f81"
+.colors <- c("#e05305", "#fbb407")
+.names <- c("COPOM Forward", "DI1 Forward")
+names(.colors) <- .names
 
-plot_curve(curve |> filter(business_days < 504), .copom_dates)
+g <- ggplot() +
+  geom_vline(
+    xintercept = copom_dates,
+    colour = "grey",
+    linetype = "dashed", size = 1
+  ) +
+  geom_step(
+    data = curve_fwd,
+    mapping = aes(x = dates, y = rates, colour = .names[2]),
+    size = 1,
+    direction = "vh"
+  ) +
+  geom_point(
+    data = curve_fwd,
+    mapping = aes(x = dates, y = rates, colour = .names[2]),
+    size = 2
+  ) +
+  geom_line(
+    data = copom_curve,
+    mapping = aes(x = dates, y = rates, colour = .names[1]),
+    size = 1
+  )
+
+g <- g +
+  scale_colour_manual("", breaks = .names, values = .colors)
+
+.title <- glue("Curva a Termo de Juros Prefixados DI1 - {refdate}",
+  refdate = format(curve@refdate)
+)
+g <- g +
+  labs(
+    x = "Data",
+    y = "%",
+    title = .title,
+    subtitle = "As linhas cinza tracejadas representam as datas do COPOM",
+    caption = "Desenvolvido por wilsonfreitas (com dados da B3)"
+  ) +
+  theme_wf(base_size = 20) +
+  scale_y_continuous(labels = scales::percent)
+
+g
