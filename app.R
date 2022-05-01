@@ -59,6 +59,12 @@ ui <- fluidPage(
         tabPanel(
             "Curva Prefixada (DI1) Completa",
             div(span("1", style = "color: black;")),
+            fluidRow(
+                div(span("1", style = "color: black;")),
+                checkboxInput("di1c_show_fwd", "Mostrar Curva a Termo"),
+                checkboxInput("di1c_show_copom", "Mostrar Datas do COPOM")
+            ),
+            div(span("1", style = "color: black;")),
             plotOutput("curvePreComplete", height = "400px"),
         ),
     )
@@ -109,8 +115,12 @@ server <- function(input, output, session) {
 
     output$curvePreComplete <- renderPlot({
         curve <- curvePre()
-        .copom_dates <- copomDates()
-        plot_curve(curve, .copom_dates)
+        .copom_dates <- if (input$di1c_show_copom) {
+            copomDates()
+        } else {
+            NULL
+        }
+        plot_curve(curve, .copom_dates, show_forward = input$di1c_show_fwd)
     })
 
     output$curveCopom <- renderPlot({
