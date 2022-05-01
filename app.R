@@ -17,39 +17,50 @@ CURVE <- get_curve_from_web()
 )
 
 ui <- fluidPage(
-
-    titlePanel("Curva de Juros Prefixados DI1"),
     theme = .theme,
-    br(),
+    titlePanel("Curva de Juros Prefixados DI1"),
     fluidRow(
-        column(
-            width = 3,
-            dateInput("refdate", "Data de referência", CURVE@refdate),
+        div(span("1", style = "color: black;")),
+        dateInput("refdate", "Data de referência", CURVE@refdate),
+        div(span("1", style = "color: black;")),
+        numericInput("num_meetings", "#Datas do COPOM", 4)
+    ),
+    br(),
+    tabsetPanel(
+        tabPanel(
+            "Curva Prefixada (DI1) 2 anos",
+            div(span("1", style = "color: black;")),
             downloadButton("downloadCurvaPre",
-                "Download .csv com os dados da curva Prefixada",
+                "CSV Curva Prefixada",
                 icon = icon("download")
             ),
             div(span("1", style = "color: black;")),
+            plotOutput("curvePre", height = "400px"),
+        ),
+        tabPanel(
+            "Expectativas de Taxa DI",
+            div(span("1", style = "color: black;")),
             downloadButton("downloadCopom",
-                "Download .csv com os dados das curvas a Termo",
+                "CSV Juros a Termo e Choques",
                 icon = icon("download")
+            ),
+            div(span("1", style = "color: black;")),
+            fluidRow(
+                column(
+                    plotOutput("curveCopom", height = "400px"),
+                    width = 8
+                ),
+                column(
+                    width = 4,
+                    dataTableOutput("tableCopom"),
+                )
             )
         ),
-        column(
-            plotOutput("curvePre", height = "320px"),
-            width = 9
-        )
-    ),
-    br(),
-    fluidRow(
-        column(
-            plotOutput("curveCopom", height = "320px"),
-            width = 8
+        tabPanel(
+            "Curva Prefixada (DI1) Completa",
+            div(span("1", style = "color: black;")),
+            plotOutput("curvePreComplete", height = "400px"),
         ),
-        column(
-            width = 4,
-            dataTableOutput("tableCopom"),
-        )
     )
 )
 
@@ -65,7 +76,7 @@ server <- function(input, output, session) {
     })
 
     copomDates <- reactive({
-        get_copom_dates(refdate(), 4)
+        get_copom_dates(refdate(), input$num_meetings)
     })
 
     curveCopom <- reactive({
@@ -94,6 +105,12 @@ server <- function(input, output, session) {
         curve <- curvePre()
         .copom_dates <- copomDates()
         plot_curve(fixedincome::first(curve, "2 years"), .copom_dates)
+    })
+
+    output$curvePreComplete <- renderPlot({
+        curve <- curvePre()
+        .copom_dates <- copomDates()
+        plot_curve(curve, .copom_dates)
     })
 
     output$curveCopom <- renderPlot({
