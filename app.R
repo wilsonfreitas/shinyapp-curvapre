@@ -5,11 +5,12 @@ library(lubridate)
 library(bslib)
 library(readr)
 library(DT)
-library(flatforwardCOPOM)
+library(copom)
+library(ggplot2)
 
 source("utils-functions.R")
 
-CURVE <- get_curve_from_web()
+CURVE <- get_di1_curve(getdate("last bizday", Sys.Date() - 1, "Brazil/ANBIMA"))
 
 .theme <- bs_theme(
     fg = "#fff",
@@ -20,10 +21,14 @@ ui <- fluidPage(
     theme = .theme,
     titlePanel("Curva de Juros Prefixados DI1"),
     fluidRow(
-        div(span("1", style = "color: black;")),
-        dateInput("refdate", "Data de referência", CURVE@refdate),
-        div(span("1", style = "color: black;")),
-        numericInput("num_meetings", "#Datas do COPOM", 4)
+        column(
+            2, div(span("1", style = "color: black;")),
+            dateInput("refdate", "Data de referência", CURVE@refdate)
+        ),
+        column(
+            2, div(span("1", style = "color: black;")),
+            numericInput("num_meetings", "#Datas do COPOM", 6)
+        )
     ),
     br(),
     tabsetPanel(
@@ -40,9 +45,17 @@ ui <- fluidPage(
         tabPanel(
             "Expectativas de Taxa DI",
             div(span("1", style = "color: black;")),
-            downloadButton("downloadCopom",
-                "CSV Juros a Termo e Choques",
-                icon = icon("download")
+            fluidRow(
+                column(2, downloadButton("downloadCopom",
+                    "CSV Juros a Termo e Choques",
+                    icon = icon("download")
+                )),
+                column(4, radioButtons("copomModels", "Solução de Conflitos", c(
+                    "Primeiro Futuro" = "first",
+                    "Segundo Futuro" = "second",
+                    "Taxa Forward" = "forward",
+                    "Otimização" = "optimize"
+                ), "second", TRUE))
             ),
             div(span("1", style = "color: black;")),
             fluidRow(
@@ -61,8 +74,8 @@ ui <- fluidPage(
             div(span("1", style = "color: black;")),
             fluidRow(
                 div(span("1", style = "color: black;")),
-                checkboxInput("di1c_show_fwd", "Mostrar Curva a Termo"),
-                checkboxInput("di1c_show_copom", "Mostrar Datas do COPOM")
+                column(2, checkboxInput("di1c_show_fwd", "Mostrar Curva a Termo")),
+                column(3, dateInput("di1c_second_date", "Adicionar segunda curva", CURVE@refdate))
             ),
             div(span("1", style = "color: black;")),
             plotOutput("curvePreComplete", height = "400px"),
@@ -70,10 +83,10 @@ ui <- fluidPage(
     )
 )
 
-
 server <- function(input, output, session) {
     curvePre <- reactive({
-        get_curve_from_web(input$refdate)
+        validate(need(is.bizday(input$refdate, "Brazil/ANBIMA"), "Sem curva para data"))
+        get_di1_curve(input$refdate)
     })
 
     refdate <- reactive({
@@ -88,7 +101,7 @@ server <- function(input, output, session) {
     curveCopom <- reactive({
         curve <- curvePre()
         .copom_dates <- copomDates()
-        interpolation(curve) <- interp_flatforwardcopom(.copom_dates, "second")
+        interpolation(curve) <- interp_flatforwardcopom(.copom_dates, input$copomModels)
         curve
     })
 
@@ -110,23 +123,36 @@ server <- function(input, output, session) {
     output$curvePre <- renderPlot({
         curve <- curvePre()
         .copom_dates <- copomDates()
-        plot_curve(fixedincome::first(curve, "2 years"), .copom_dates)
+        interp_ <- interpolation(curve)
+        curve_2y <- fixedincome::first(curve, "2 years")
+        interpolation(curve_2y) <- interp_
+        plot_curve(curve_2y, .copom_dates)
     })
 
     output$curvePreComplete <- renderPlot({
         curve <- curvePre()
-        .copom_dates <- if (input$di1c_show_copom) {
-            copomDates()
-        } else {
-            NULL
+        g <- ggspotratecurveplot(curve,
+            title = "Curva de Juros Prefixados DI1",
+            caption = "Desenvolvido por wilsonfreitas (com dados da B3)"
+        )
+        if (input$di1c_show_fwd) {
+            g <- g + autolayer(forwardrate(curve), size = 1)
         }
-        plot_curve(curve, .copom_dates, show_forward = input$di1c_show_fwd)
+        if (input$di1c_second_date != refdate()) {
+            curve2 <- get_di1_curve(input$di1c_second_date)
+            g <- g + autolayer(curve2, size = 1) +
+                autolayer(curve2, size = 2, curve.geom = "point")
+        }
+        g
     })
 
     output$curveCopom <- renderPlot({
         curve <- curveCopom()
         .copom_dates <- copomDates()
-        plot_copom_curve(fixedincome::first(curve, "1 years"), .copom_dates)
+        interp_ <- interpolation(curve)
+        curve_1y <- fixedincome::first(curve, "1 years")
+        interpolation(curve_1y) <- interp_
+        plot_copom_curve(curve_1y, .copom_dates)
     })
 
     output$tableCopom <- renderDataTable({
